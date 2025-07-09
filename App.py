@@ -56,7 +56,7 @@ st.set_page_config(page_title="Amazon Sentiment Dashboard", layout="wide")
 st.title("Amazon Review Sentiment Analysis Dashboard")
 
 # Load
-df = load_data(r"C:\Users\SAMY\Documents\amazon_reviews.csv", nrows=50000)
+df = load_data("amazon_reviews.csv", nrows=50000)
 sia = init_sia()
 df['compound'] = df['reviewText'].apply(lambda x: sia.polarity_scores(x)['compound'])
 df['sentiment'] = df['compound'].apply(lambda c: "Positive" if c >= 0 else "Negative")
