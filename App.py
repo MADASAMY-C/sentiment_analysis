@@ -3,10 +3,11 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import altair as alt
-import nltk
-from nltk.sentiment import SentimentIntensityAnalyzer
 import plotly.express as px
 from wordcloud import WordCloud
+import torch
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
+from functools import lru_cache
 
 # ---------- Styling ----------
 st.set_page_config(page_title="Amazon Sentiment Dashboard", layout="wide")
@@ -39,10 +40,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# ---------- Download resources ----------
-nltk.download('vader_lexicon')
-
-
 
 @st.cache_data
 def load_data(path="amazon_reviews.csv", nrows=None):
@@ -51,19 +48,45 @@ def load_data(path="amazon_reviews.csv", nrows=None):
     return df
 
 @st.cache_resource
-def init_sia():
-    return SentimentIntensityAnalyzer()
+def init_bert():
+    model_name = "nlptown/bert-base-multilingual-uncased-sentiment"
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForSequenceClassification.from_pretrained(model_name)
+    return tokenizer, model
+
+def bert_sentiment(text, tokenizer, model):
+    inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
+    with torch.no_grad():
+        outputs = model(**inputs)
+    probs = torch.nn.functional.softmax(outputs.logits, dim=-1)
+    stars = probs.argmax().item() + 1  # 1-5 stars
+    # Map to 3-class
+    if stars >= 4:
+        return "Positive"
+    elif stars == 3:
+        return "Neutral"
+    else:
+        return "Negative"
+
+@st.cache_data
+def compute_bert_sentiments(texts, _tokenizer, _model):
+    return [bert_sentiment(t, _tokenizer, _model) for t in texts]
 
 # ---------- Load and Prepare Data ----------
 df = load_data("amazon_reviews.csv", nrows=50000)
-sia = init_sia()
+bert_tokenizer, bert_model = init_bert()
 
-df['compound'] = df['reviewText'].apply(lambda x: sia.polarity_scores(x)['compound'])
-df['sentiment'] = df['compound'].apply(lambda c: "Positive" if c >= 0 else "Negative")
 df['month'] = df['reviewTime'].dt.to_period('M').dt.to_timestamp()
+
+# Compute BERT sentiments (cached)
+if 'sentiment_bert' not in df.columns:
+    df['sentiment_bert'] = compute_bert_sentiments(df['reviewText'].tolist(), bert_tokenizer, bert_model)
+
+df['sentiment'] = df['sentiment_bert']
 
 # ---------- Top Header ----------
 st.title("Amazon Review Sentiment Analysis Dashboard")
+
 col1, col2, col3 = st.columns(3)
 col1.metric("💬 Reviews", f"{len(df):,}")
 col2.metric("⭐ Avg Rating", f"{df['overall'].mean():.2f}")
@@ -78,13 +101,17 @@ with tab1:
 
     # KPIs
     total = len(df)
-    pos_pct = (df['sentiment'] == "Positive").mean()
-    neg_pct = (df['sentiment'] == "Negative").mean()
+    sentiments_present = df['sentiment'].unique().tolist()
+    pos_pct = (df['sentiment'] == "Positive").mean() if "Positive" in sentiments_present else 0
+    neg_pct = (df['sentiment'] == "Negative").mean() if "Negative" in sentiments_present else 0
+    neu_pct = (df['sentiment'] == "Neutral").mean() if "Neutral" in sentiments_present else 0
 
-    kpi1, kpi2, kpi3 = st.columns(3)
+    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
     kpi1.metric("Total Reviews", f"{total:,}")
     kpi2.metric("Positive %", f"{pos_pct*100:.1f}%")
     kpi3.metric("Negative %", f"{neg_pct*100:.1f}%")
+    if "Neutral" in sentiments_present:
+        kpi4.metric("Neutral %", f"{neu_pct*100:.1f}%")
 
     # Rating Distribution Chart (Altair)
     st.write("### Ratings Distribution")
@@ -110,19 +137,20 @@ with tab1:
     st.plotly_chart(fig_bar, use_container_width=True)
 
     # Donut Chart
-    donut_cols = st.columns(2)
-    for sentiment, col in zip(["Positive", "Negative"], donut_cols):
-        frac = (df['sentiment'] == sentiment).mean()
-        fig = px.pie(names=[sentiment, ""], values=[frac, 1-frac],
-                     hole=0.7, template="plotly_dark")
-        fig.update_traces(showlegend=False, textinfo="percent",
-                          marker_colors=["#002366", "#FB8500"])
-        col.subheader(f"{sentiment} Reviews")
-        col.plotly_chart(fig, use_container_width=True)
+    donut_cols = st.columns(3)
+    sentiments_order = ["Positive", "Negative", "Neutral"]
+    colors = {"Positive": "#002366", "Negative": "#FB8500", "Neutral": "#808080"}
+    for sentiment, col in zip(sentiments_order, donut_cols):
+        if sentiment in sentiments_present:
+            frac = (df['sentiment'] == sentiment).mean()
+            fig = px.pie(names=[sentiment, ""], values=[frac, 1-frac],
+                         hole=0.7, template="plotly_dark")
+            fig.update_traces(showlegend=False, textinfo="percent",
+                              marker_colors=[colors[sentiment], "#FB8500"])
+            col.subheader(f"{sentiment} Reviews")
+            col.plotly_chart(fig, use_container_width=True)
 
-  
-
- # sidebar
+    # sidebar
     st.sidebar.header("Filters")
     
     # ⭐ Filter by star rating
@@ -134,8 +162,10 @@ with tab1:
     years = st.sidebar.slider("Review year range", yr_min, yr_max, (yr_min, yr_max))
     df = df[df['month'].dt.year.between(years[0], years[1])]
     st.header("Word Clouds")
-    wc_cols = st.columns(2)
-    for sentiment, col in zip(["Positive", "Negative"], wc_cols):
+    wc_cols = st.columns(3)
+    sentiments_order = ["Positive", "Negative", "Neutral"]
+    for sentiment, col in zip(sentiments_order, wc_cols):
+        if sentiment in sentiments_present:
             texts = df[df['sentiment'] == sentiment]['reviewText'].dropna().head(200)
             blob = " ".join(texts)
             if blob:
@@ -143,18 +173,17 @@ with tab1:
                 col.subheader(sentiment)
                 col.image(wc.to_array(), use_container_width=True)
 
-
-    # Sentiment Score Histogram
-    st.header("Sentiment Strength Distribution")
+    # Sentiment Score Histogram (using BERT confidence proxy)
+    st.header("Sentiment Distribution")
     fig_hist = px.histogram(
-        df, x="compound", nbins=40,
-        title="Distribution of VADER Compound Scores",
+        df, x="overall", nbins=5,
+        title="Rating Distribution (1-5 Stars)",
         template="plotly_dark",
         color_discrete_sequence=["#002366"],
         marginal="rug", histnorm="percent", text_auto=True
     )
     fig_hist.update_layout(
-        xaxis_title="Compound Score (−1 to 1)",
+        xaxis_title="Star Rating",
         yaxis_title="Percentage of Reviews",
         bargap=0.05,
         barcornerradius=50
@@ -225,8 +254,19 @@ with tab3:
 st.write("Selected columns:", selected_cols)
 
 st.subheader("📝 Sample Reviews with Sentiment")
-st.dataframe(df[['reviewText', 'sentiment']].head(10))
+st.caption("Model: BERT (nlptown/bert-base-multilingual-uncased-sentiment)")
+
+# Show balanced sample: 5 from each sentiment
+sample_dfs = []
+for sent in ["Positive", "Negative", "Neutral"]:
+    subset = df[df['sentiment'] == sent]['reviewText'].head(5)
+    if len(subset) > 0:
+        sample_dfs.append(pd.DataFrame({'reviewText': subset, 'sentiment': sent}))
+if sample_dfs:
+    sample_df = pd.concat(sample_dfs, ignore_index=True)
+    st.dataframe(sample_df)
+else:
+    st.dataframe(df[['reviewText', 'sentiment']].head(10))
 
 # Save full results before applying filters
 df_all_results = df.copy()
-

@@ -1,6 +1,9 @@
 streamlit
-nltk
 pandas
 matplotlib
 plotly
 wordcloud
+torch
+transformers
+accelerate
+altair
