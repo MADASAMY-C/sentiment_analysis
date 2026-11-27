@@ -1,95 +1,98 @@
-# Amazon Sentiment Analysis Dashboard
+# Amazon Review Sentiment Analysis Dashboard
 
-A Python Streamlit dashboard for analyzing sentiment in Amazon reviews. The app loads the included `amazon_reviews.csv` dataset, analyzes review text with NLTK's VADER sentiment analyzer, and displays ratings, sentiment trends, distributions, and word clouds.
+A Streamlit web dashboard that analyzes Amazon customer reviews using a BERT sentiment model. It classifies reviews as Positive, Neutral, or Negative and visualizes ratings, sentiment trends, word clouds, and helpful-vote metrics.
 
 ## Features
 
-- Amazon review sentiment classification
-- Positive and negative sentiment percentages
-- Monthly sentiment trends
-- Rating distribution and sentiment strength charts
-- Positive and negative review word clouds
-- Interactive data table and column aggregation tools
+| Feature | Description |
+|---------|-------------|
+| **Sentiment Classification** | BERT model (`nlptown/bert-base-multilingual-uncased-sentiment`) classifies each review as Positive, Neutral, or Negative. |
+| **Ratings Distribution** | Bar and pie charts showing 1–5 star rating breakdown. |
+| **Monthly Sentiment Trend** | Line chart of sentiment counts over time. |
+| **Word Clouds** | Word clouds per sentiment with top-word frequency tables. |
+| **Helpful Votes Analysis** | Helpful vs. not helpful votes, helpful-ratio distribution, and top helpful reviews. |
+| **Interactive Data Table** | Browse the full dataset with column selection and sampling. |
+| **Column Aggregation** | Group data by a column and aggregate numeric metrics (mean, sum, max, min, count). |
+| **Disk Caching** | Sentiments are cached in `.sentiment_cache/` so re-runs are faster. |
+
+## Project Structure
+
+```
+sentiment_analysis/
+├── App.py              # Streamlit dashboard application
+├── amazon_reviews.csv  # Amazon review dataset
+├── requirements.txt    # Python package dependencies
+├── README.md           # Project documentation
+└── .sentiment_cache/   # Auto-generated sentiment cache (created at runtime)
+```
 
 ## Prerequisites
 
 - Python 3.9 or later
 - Git
 - VS Code (recommended)
-- Internet access on the first run to download the NLTK VADER lexicon
+- Internet access (first run downloads the BERT model)
 
-## Clone the Project
+## Installation
+
+Clone the repository:
 
 ```bash
 git clone https://github.com/MADASAMY-C/sentiment_analysis.git
 cd sentiment_analysis
 ```
 
-## Run in VS Code
+Create and activate a virtual environment:
 
-1. Open the project folder:
+**Windows PowerShell:**
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
 
-   ```bash
-   code .
-   ```
+**macOS/Linux:**
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
 
-2. Open **Terminal → New Terminal** in VS Code.
+Install dependencies:
 
-3. Create a virtual environment:
+```bash
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
 
-   **Windows PowerShell:**
-
-   ```powershell
-   python -m venv .venv
-   .\.venv\Scripts\Activate.ps1
-   ```
-
-   **macOS/Linux:**
-
-   ```bash
-   python3 -m venv .venv
-   source .venv/bin/activate
-   ```
-
-4. Install the required packages:
-
-   ```bash
-   python -m pip install --upgrade pip
-   pip install -r requirements.txt
-   pip install numpy altair
-   ```
-
-5. Start the Streamlit app:
-
-   ```bash
-   streamlit run App.py
-   ```
-
-6. Open `http://localhost:8501` in a browser if VS Code does not open it automatically.
-
-VS Code may prompt you to select a Python interpreter. Select `.venv` from the project folder.
-
-## Run with the Activated Environment
-
-After activating the virtual environment, no VS Code terminal setup is needed for subsequent runs:
+## Run the App
 
 ```bash
 streamlit run App.py
 ```
 
-## Project Files
+Then open `http://localhost:8501` in your browser.
 
-- `App.py` - Streamlit dashboard application
-- `amazon_reviews.csv` - Amazon review dataset
-- `requirements.txt` - Python package dependencies
+## How It Works
+
+1. **Load data** – Reads `amazon_reviews.csv` and parses review dates.
+2. **Analyze sentiment** – Runs the BERT model over review text (batch size 64). Results are cached to disk under `.sentiment_cache/`.
+3. **Explore** – Use the three tabs:
+   - **Dashboard** – KPI cards, ratings distribution, sentiment trends, word clouds, helpful-vote charts, and top helpful reviews.
+   - **Data** – Full interactive dataset table.
+   - **Settings** – Column selector and aggregation tools (group by a column, aggregate numeric metrics).
+
+## Sample Size
+
+By default the app analyzes the first **1,000 reviews** for fast loading. To analyze the full dataset (~50K reviews), click **"Analyze Full Dataset (50K)"** in the sidebar (takes 5–10 minutes).
 
 ## Troubleshooting
 
-- **Missing package:** Run `pip install -r requirements.txt` again.
-- **Missing `numpy` or `altair`:** Run `pip install numpy altair`.
-- **Port already in use:** Run `streamlit run App.py --server.port 8502`.
-- **NLTK download failure:** Keep internet access enabled and restart the app.
-- **`FileNotFoundError` for the CSV:** Start the app from the project directory containing `App.py` and `amazon_reviews.csv`.
+| Issue | Fix |
+|-------|-----|
+| Missing package | Run `pip install -r requirements.txt` again. |
+| Port already in use | Run `streamlit run App.py --server.port 8502`. |
+| BERT model download fails | Ensure internet access and restart the app. |
+| CSV not found | Run the app from the folder containing `App.py` and `amazon_reviews.csv`. |
+| Slow first run | The first run downloads and caches the BERT model; subsequent runs are faster. |
 
 ## License
 
